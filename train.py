@@ -148,8 +148,6 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-        exit()
-
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.05)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
@@ -163,10 +161,10 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
             optimizer.load_state_dict(chkpt['optimizer_state_dict'])
             TRAIN_LOSS, VAL_LOSS = chkpt['train_loss'], chkpt['val_loss']
             TRAIN_ACC, VAL_ACC = chkpt['train_acc'], chkpt['val_acc']
-
-        for epoch in tqdm(range(num_epochs), desc="Training"):
-        # for epoch in range(num_epochs):
-            start_time = time.time()
+        
+        start_time = time.time()
+        # for epoch in tqdm(range(num_epochs), desc="Training"):
+        for epoch in range(num_epochs):
 
             model, optimizer, train_loss, train_acc, train_f1 = train(model, optimizer, scheduler, train_loader, criterion, device, model_conf)
             val_f1, val_loss, val_acc = validate(model, val_loader, criterion, model_conf)
@@ -178,14 +176,13 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
             VAL_ACC.append(val_acc)
 
             save_chkpt(model, optimizer, TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC, chkpt_fp)
-            print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
-                    val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
 
-        # model = train(model, train_loader, optimizer, scheduler, criterion, num_epochs, device)
+            if (epoch+1)%2 == 0:
+                print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
+                        val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
+                start_time = time.time()
 
         all_f1_scores.append(val_f1)
-        
-        # print(f"Fold {fold+1}|5 \t Loss: {val_loss:.4f} \t Acc: {val_acc:.4f} \t F1 Score: {f1:.4f}")
 
     print(f"\nAverage F1 Score: {np.mean(all_f1_scores):.4f}")
     

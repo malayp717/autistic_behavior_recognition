@@ -58,12 +58,9 @@ class VSTWithCLIP(nn.Module):
         video_features = self.video_model(video)
         video_features = self.video_embed(video_features)
 
-        # print(video.size())
-
         text_tokens = self.tokenizer(texts, return_tensors="pt", padding="max_length", truncation=True, max_length=50).to(video.device)
-        #print(text_tokens.size())
         text_features = self.text_model(**text_tokens).last_hidden_state[:, 0, :]  # CLS token
-        # print(text_features.size())
+
         combined_features = torch.cat((video_features, text_features), dim=1)
         logits = self.classifier(combined_features)
 

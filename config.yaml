@@ -6,10 +6,10 @@ model_dir: /hdd/malay/models/
 yolo_conf: yolov5lu.pt
 csv_fp: ASBD.csv
 clip_len: 30
-batch_size: 4
+batch_size: 16
 lr: 0.0001
-num_epochs: 10
-#model: VST
+num_epochs: 20
+# model: VST
 model: VSTWithCLIP
 # setting: binary
 setting: multiclass

@@ -7,6 +7,7 @@ import torch
 from ultralytics import YOLO
 import warnings
 import time
+import glob
 
 warnings.filterwarnings(action='ignore')
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -85,6 +86,7 @@ def preprocess_video(yolo_model, video_name, video_fp, out_clip, out_frames, cli
             os.makedirs(os.path.join(out_clip, video_name), exist_ok=True)
             clip_filename = os.path.join(out_clip, video_name, f'{video_name}_clip_{clip_idx:04d}.avi')
             create_video_from_frames(clip_frames, clip_filename)
+            clip_idx += 1
             
     return
 
@@ -117,12 +119,20 @@ def get_video_duration(video_path):
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
-    if fps > 0:
-        duration = frame_count / fps
-        print(fps, duration, frame_count)
-    else:
-        print(fps, frame_count)
+    assert frame_count == 30, f'{video_path}, is incorrect'
+    duration = frame_count / fps
+    print(video_path, fps, duration, frame_count)
 
 if __name__ == '__main__':
 
     main()
+    # for category in categories:
+    #     out_dir = os.path.join(preproc_data_dir, 'abnormal', category) if category != 'normal' else os.path.join(preproc_data_dir, 'normal')
+
+    #     out_clip = os.path.join(out_dir, 'clip')
+    #     os.makedirs(out_clip, exist_ok=True)
+
+    #     # video_files = os.listdir(f'{out_clip}/clip/')
+    #     video_files = glob.glob(f'{out_clip}/*/*.avi')
+    #     for file in video_files:
+    #         get_video_duration(file)

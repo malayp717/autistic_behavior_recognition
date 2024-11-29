@@ -20,7 +20,7 @@ The parent directory of the downloaded videos will be the `data_dir` specified i
 
 Run this command:
 
-python download.py
+`python download.py`
 
 ### 2. Preprocess Dataset
 
@@ -30,7 +30,7 @@ We segment video to prepare clips of 30 frames each.
 
 To preprocess the dataset run this command:
 
-python train.py
+`python train.py`
 
 ### 3. Train and evaluate the model
 
@@ -55,8 +55,11 @@ The model architecture is same as above. The class descriptions are detailed ins
 
 To train the model and obtain model checkpoints run:
 
-python train.py
+`python train.py`
 
 ### 4. Experimental Settings
 
 We followed the same experimental settings as described in the section 4.1 of [this paper](https://arxiv.org/pdf/2211.09310).
+
+#### Note:
+This repository will not run as it is since we have not provided the raw dataset due to privacy concerns.
