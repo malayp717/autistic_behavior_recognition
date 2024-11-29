@@ -27,7 +27,6 @@ clip_len = config['clip_len']
 def create_video_from_frames(clip_frames, out_fp, fps=15):
 
     # Read the first frame to get the size (width, height)
-    # print(clip_frames[0])
     first_frame = cv2.imread(clip_frames[0])
     
     height, width, _ = first_frame.shape

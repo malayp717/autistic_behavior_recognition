@@ -142,8 +142,6 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
         train_dataset = VideoDataset(train_videos, train_labels, train_desc, clip_len, min_clip_len, transform)
         val_dataset = VideoDataset(val_videos, val_labels, val_desc, clip_len, min_clip_len, transform)
 
-        print(train_dataset.getbadclips(), val_dataset.getbadclips())
-
         # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
         # val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 

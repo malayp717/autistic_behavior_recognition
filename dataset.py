@@ -24,32 +24,6 @@ class VideoDataset(Dataset):
 
     def __len__(self):
         return len(self.video_files)
-    
-    def getbadclips(self):
-
-        cnt = 0
-
-        for idx in range(len(self.video_files)):
-            video_path = self.video_files[idx]
-            label = self.labels[idx]
-
-            cap = cv2.VideoCapture(video_path)
-            frames = []
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                if self.transform:
-                    frame = self.transform(frame)
-                frames.append(frame)
-            cap.release()
-
-            if len(frames) < self.min_clip_len:
-                print(video_path)
-                cnt += 1
-            
-            return cnt
 
     def __getitem__(self, idx):
         video_path = self.video_files[idx]
@@ -71,9 +45,6 @@ class VideoDataset(Dataset):
                 frame = self.transform(frame)
             frames.append(frame)
         cap.release()
-
-        # if len(frames) < self.min_clip_len:
-        #     return torch.empty(0, 3, 224, 224), torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)
 
         if len(frames) < self.clip_len:
             padding = [torch.zeros_like(frames[0]) for _ in range(self.clip_len - len(frames))]
