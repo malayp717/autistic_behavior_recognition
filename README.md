@@ -30,7 +30,7 @@ We segment video to prepare clips of 30 frames each.
 
 To preprocess the dataset run this command:
 
-`python train.py`
+`python preproc.py`
 
 ### 3. Train and evaluate the model
 

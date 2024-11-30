@@ -28,11 +28,7 @@ class VideoDataset(Dataset):
     def __getitem__(self, idx):
         video_path = self.video_files[idx]
         label = self.labels[idx]
-
-        if self.desc is not None:
-            desc = self.desc[idx]
-        else:
-            desc = None
+        desc = self.desc[idx] if self.desc is not None else None
 
         cap = cv2.VideoCapture(video_path)
         frames = []
@@ -53,11 +49,7 @@ class VideoDataset(Dataset):
             frames = frames[:self.clip_len]
 
         video_tensor = torch.stack(frames)
-        return video_tensor, label, desc
 
-# def collate_fn(batch):
-#     batch = [item for item in batch if item is not None]
-#     if not batch:
-#         return torch.empty(0, 0, 3, 224, 224), torch.empty(0, dtype=torch.long), torch.empty(0, dtype=torch.long)
-#     videos, labels, desc = zip(*batch)
-#     return torch.stack(videos), torch.tensor(labels), list(desc)
+        if desc is None:
+            return video_tensor, label
+        return video_tensor, label, desc

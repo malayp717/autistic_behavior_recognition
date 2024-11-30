@@ -13,7 +13,7 @@ import yaml
 import warnings
 import time
 from loss import VSTLoss, VSTWithClipLoss
-from utils import get_video_files_and_labels_binary, get_video_files_and_labels_multi, save_chkpt, load_chkpt
+from utils import get_video_files_and_labels, save_chkpt, load_chkpt
 warnings.filterwarnings(action='ignore')
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -49,19 +49,17 @@ transform = transforms.Compose([
                     transforms.Lambda(lambda x: x / 255.0),
                 ])
 
-label_2_idx = {label: i for i, label in enumerate(categories)}
-idx_2_label = {i: label for i, label in enumerate(categories)}
-
 def train(model, optimizer, scheduler, loader, criterion, device, model_conf):
 
     train_loss, train_correct, train_total = 0, 0, 0
     train_preds, train_true = [], []
 
     model.train()
-    for _, (videos, labels, desc) in enumerate(loader):
-        # if videos.size(0) == 0:
-        #     continue
-        videos, labels = videos.to(device), labels.to(device)
+    for _, data in enumerate(loader):
+        if model_conf == 'VST':
+            videos, labels = data[0].to(device), data[1].to(device)
+        else:
+            videos, labels, desc = data[0].to(device), data[1].to(device), data[2]
 
         optimizer.zero_grad()
         if model_conf == 'VST':
@@ -69,17 +67,19 @@ def train(model, optimizer, scheduler, loader, criterion, device, model_conf):
         else:
             logits, video_features, text_features = model(videos, desc)
 
-        train_loss = criterion(logits, labels) if model_conf == 'VST' else criterion(logits, labels, video_features, text_features)
-        train_loss.backward()
+        t_loss = criterion(logits, labels) if model_conf == 'VST' else criterion(logits, labels, video_features, text_features)
+        t_loss.backward()
         optimizer.step()
 
         preds = logits.argmax(dim=1).cpu().numpy()
         train_preds.extend(preds)
         train_true.extend(labels.cpu().numpy())
         
-        train_loss += train_loss.item() * labels.size(0)
+        train_loss += t_loss.item() * labels.size(0)
         train_correct += (logits.argmax(dim=1) == labels).sum().item()
         train_total += labels.size(0)
+
+        # print(f'Loss: {t_loss.item():.4f} Acc: {train_correct/train_total:.4f}')
 
     scheduler.step()
 
@@ -97,10 +97,11 @@ def validate(model, loader, criterion, model_conf):
     
     model.eval()
     with torch.no_grad():
-        for _, (videos, labels, desc) in enumerate(loader):
-            # if videos.size(0) == 0:
-            #     continue
-            videos, labels = videos.to(device), labels.to(device)
+        for _, data in enumerate(loader):
+            if model_conf == 'VST':
+                videos, labels = data[0].to(device), data[1].to(device)
+            else:
+                videos, labels, desc = data[0].to(device), data[1].to(device), data[2]
 
             if model_conf == 'VST':
                 logits = model(videos)
@@ -142,9 +143,6 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
         train_dataset = VideoDataset(train_videos, train_labels, train_desc, clip_len, min_clip_len, transform)
         val_dataset = VideoDataset(val_videos, val_labels, val_desc, clip_len, min_clip_len, transform)
 
-        # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-        # val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
@@ -163,8 +161,8 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
             TRAIN_ACC, VAL_ACC = chkpt['train_acc'], chkpt['val_acc']
         
         start_time = time.time()
-        # for epoch in tqdm(range(num_epochs), desc="Training"):
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs), desc="Training"):
+        # for epoch in range(num_epochs):
 
             model, optimizer, train_loss, train_acc, train_f1 = train(model, optimizer, scheduler, train_loader, criterion, device, model_conf)
             val_f1, val_loss, val_acc = validate(model, val_loader, criterion, model_conf)
@@ -177,10 +175,10 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
 
             save_chkpt(model, optimizer, TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC, chkpt_fp)
 
-            if (epoch+1)%2 == 0:
-                print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
-                        val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
-                start_time = time.time()
+            # if (epoch+1)%2 == 0:
+            print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
+                    val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
+            start_time = time.time()
 
         all_f1_scores.append(val_f1)
 
@@ -189,12 +187,10 @@ def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_cl
 def main(model_conf, setting):
 
     num_classes = 2 if setting == 'binary' else len(categories)
-    desc = None
     
-    if setting == 'binary':
-        video_files, labels, weights = get_video_files_and_labels_binary(preproc_data_dir)
-    else:
-        video_files, labels, desc, weights = get_video_files_and_labels_multi(preproc_data_dir, categories, device)
+    video_files, labels, desc, weights = get_video_files_and_labels(preproc_data_dir, categories, setting)
+    if model_conf == 'VST':
+        desc = None 
 
     weights = weights.to(device)
     model = VST(num_classes).to(device) if model_conf == 'VST' else VSTWithCLIP(num_classes).to(device)
