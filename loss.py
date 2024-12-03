@@ -4,7 +4,8 @@ import torch.nn as nn
 class VSTLoss(nn.Module):
     def __init__(self, weight):
         super(VSTLoss, self).__init__()
-        self.loss = nn.CrossEntropyLoss(weight=weight)
+        # self.loss = nn.CrossEntropyLoss(weight=weight)
+        self.loss = nn.CrossEntropyLoss()
     
     def forward(self, logits, labels):
         loss = self.loss(logits, labels)
@@ -13,7 +14,8 @@ class VSTLoss(nn.Module):
 class VSTWithClipLoss(nn.Module):
     def __init__(self, weight, lambda_contrastive=0.1):
         super(VSTWithClipLoss, self).__init__()
-        self.loss = nn.CrossEntropyLoss(weight=weight)
+        # self.loss = nn.CrossEntropyLoss(weight=weight)
+        self.loss = nn.CrossEntropyLoss()
         self.lambda_contrastive = lambda_contrastive
     
     def forward(self, logits, labels, video_features, text_features):

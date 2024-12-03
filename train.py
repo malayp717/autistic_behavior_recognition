@@ -1,12 +1,13 @@
 import os
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 from dataset import VideoDataset
-from VST import VST, VSTWithCLIP
+from models import VST, VSTWithCLIP
 from torchvision import transforms
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, roc_auc_score
+from sklearn.preprocessing import label_binarize
 from tqdm import tqdm
 import numpy as np
 import yaml
@@ -18,6 +19,7 @@ warnings.filterwarnings(action='ignore')
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 torch.cuda.empty_cache()
+torch.manual_seed(0)
 
 proj_dir = os.path.dirname(os.path.abspath(__file__))
 with open(f'{proj_dir}/config.yaml', 'r') as f:
@@ -49,10 +51,10 @@ transform = transforms.Compose([
                     transforms.Lambda(lambda x: x / 255.0),
                 ])
 
-def train(model, optimizer, scheduler, loader, criterion, device, model_conf):
+def train(model, optimizer, scheduler, loader, criterion, device, model_conf, num_classes):
 
     train_loss, train_correct, train_total = 0, 0, 0
-    train_preds, train_true = [], []
+    train_preds, train_true, train_losses = [], [], []
 
     model.train()
     for _, data in enumerate(loader):
@@ -78,21 +80,28 @@ def train(model, optimizer, scheduler, loader, criterion, device, model_conf):
         train_loss += t_loss.item() * labels.size(0)
         train_correct += (logits.argmax(dim=1) == labels).sum().item()
         train_total += labels.size(0)
+        train_losses.append(t_loss.item())
 
-        # print(f'Loss: {t_loss.item():.4f} Acc: {train_correct/train_total:.4f}')
+        # print(f'Batch Loss: {t_loss.item():.4f} Acc: {train_correct/train_total:.4f}')
 
     scheduler.step()
 
     train_f1 = f1_score(train_true, train_preds, average='weighted')
     train_loss /= train_total
     train_acc = train_correct / train_total
+    auc_roc = roc_auc_score(label_binarize(train_true, classes=[i for i in range(num_classes)]), train_preds, average='macro', multi_class='ovr')
 
-    return model, optimizer, train_loss, train_acc, train_f1
+    preds_count = [train_preds.count(c) for c in range(num_classes)]
+    true_count = [train_true.count(c) for c in range(num_classes)]
+
+    print(f'Train\n Preds: {preds_count} \t True: {true_count}')
+
+    return model, optimizer, train_loss, train_acc, train_f1, train_losses, auc_roc
 
 
-def validate(model, loader, criterion, model_conf):
+def validate(model, loader, criterion, model_conf, num_classes):
 
-    val_preds, val_true = [], []
+    val_preds, val_true, val_losses = [], [], []
     val_loss, val_correct, val_total = 0, 0, 0
     
     model.eval()
@@ -108,81 +117,87 @@ def validate(model, loader, criterion, model_conf):
             else:
                 logits, video_features, text_features = model(videos, desc)
             
-            val_loss = criterion(logits, labels) if model_conf == 'VST' else criterion(logits, labels, video_features, text_features)
+            v_loss = criterion(logits, labels) if model_conf == 'VST' else criterion(logits, labels, video_features, text_features)
 
             preds = logits.argmax(dim=1).cpu().numpy()
             val_preds.extend(preds)
             val_true.extend(labels.cpu().numpy())
 
-            val_loss += val_loss.item() * labels.size(0)
+            val_loss += v_loss.item() * labels.size(0)
             val_correct += (logits.argmax(dim=1) == labels).sum().item()
             val_total += labels.size(0)
+
+            val_losses.append(v_loss.item())
 
     f1 = f1_score(val_true, val_preds, average='weighted')
 
     val_loss /= val_total
     val_acc = val_correct / val_total
+    auc_roc = roc_auc_score(label_binarize(val_true, classes=[i for i in range(num_classes)]), val_preds, average='macro', multi_class='ovr')
 
-    return f1, val_loss, val_acc
+    preds_count = [val_preds.count(c) for c in range(num_classes)]
+    true_count = [val_true.count(c) for c in range(num_classes)]
+
+    print(f'Validation\n Preds: {preds_count} \t True: {true_count}')
+    return f1, val_loss, val_acc, val_losses, auc_roc
 
 
-def cross_validate(model, criterion, video_files, labels, desc, clip_len, min_clip_len, batch_size, num_epochs, device):
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    all_f1_scores = []
+def k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len, batch_size, num_epochs, num_classes, device):
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(video_files, labels)):
-        print(f"\nFold {fold+1}|5")
-        train_videos, train_labels = [video_files[i] for i in train_idx], [labels[i] for i in train_idx]
-        val_videos, val_labels = [video_files[i] for i in val_idx], [labels[i] for i in val_idx]
+    videoDataset = VideoDataset(video_files, labels, desc, clip_len, min_clip_len, transform)
+    train_size = int(0.8 * len(videoDataset))
+    val_size = len(videoDataset) - train_size
 
-        if desc is not None:
-            train_desc, val_desc = [desc[i] for i in train_idx], [desc[i] for i in val_idx]
-        else:
-            train_desc, val_desc = None, None
+    train_dataset, val_dataset = random_split(videoDataset, [train_size, val_size])
 
-        train_dataset = VideoDataset(train_videos, train_labels, train_desc, clip_len, min_clip_len, transform)
-        val_dataset = VideoDataset(val_videos, val_labels, val_desc, clip_len, min_clip_len, transform)
+    train_labels = torch.tensor([train_dataset[i][1] for i in range(len(train_dataset))])
+    class_counts = torch.tensor([(train_labels == t).sum() for t in torch.unique(train_labels)], dtype=torch.float)
+    class_weights = 1.0 / class_counts
+    sample_weights = class_weights[train_labels.long()]
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
-        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.05)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler, num_workers=8, prefetch_factor=4)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8, prefetch_factor=4)
 
-        # Load the model from previous checkpoint
-        TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC = [], [], [], []
-        chkpt_fp = f'{model_dir}/{model_conf}_{setting}_{fold}.pth.tar'
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.05)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
-        if os.path.exists(chkpt_fp):
-            chkpt = load_chkpt(chkpt_fp)
-            model.load_state_dict(chkpt['model_state_dict'])
-            optimizer.load_state_dict(chkpt['optimizer_state_dict'])
-            TRAIN_LOSS, VAL_LOSS = chkpt['train_loss'], chkpt['val_loss']
-            TRAIN_ACC, VAL_ACC = chkpt['train_acc'], chkpt['val_acc']
-        
+    # Load the model from previous checkpoint
+    TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC = [], [], [], []
+    chkpt_fp = f'{model_dir}/{model_conf}_{setting}.pth.tar'
+
+    if os.path.exists(chkpt_fp):
+        chkpt = load_chkpt(chkpt_fp)
+        model.load_state_dict(chkpt['model_state_dict'])
+        optimizer.load_state_dict(chkpt['optimizer_state_dict'])
+        TRAIN_LOSS, VAL_LOSS = chkpt['train_loss'], chkpt['val_loss']
+        TRAIN_ACC, VAL_ACC = chkpt['train_acc'], chkpt['val_acc']
+    
+    start_time = time.time()
+    for epoch in range(num_epochs):
+
+        model, optimizer, train_loss, train_acc, train_f1, train_losses, train_auc_roc = train(model, optimizer, scheduler, train_loader, criterion, device,
+                                                                                model_conf, num_classes)
+        val_f1, val_loss, val_acc, val_losses, val_auc_roc = validate(model, val_loader, criterion, model_conf, num_classes)
+
+        TRAIN_LOSS.extend(train_losses)
+        TRAIN_ACC.append(train_acc)
+
+        VAL_LOSS.extend(val_losses)
+        VAL_ACC.append(val_acc)
+
+        save_chkpt(model, optimizer, TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC, chkpt_fp)
+
+        print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
+                train_auc_roc: {train_auc_roc:.4f} \t val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f}\
+                        val_auc_roc: {val_auc_roc:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
         start_time = time.time()
-        for epoch in tqdm(range(num_epochs), desc="Training"):
-        # for epoch in range(num_epochs):
 
-            model, optimizer, train_loss, train_acc, train_f1 = train(model, optimizer, scheduler, train_loader, criterion, device, model_conf)
-            val_f1, val_loss, val_acc = validate(model, val_loader, criterion, model_conf)
-
-            TRAIN_LOSS.append(train_loss)
-            TRAIN_ACC.append(train_acc)
-
-            VAL_LOSS.append(val_loss)
-            VAL_ACC.append(val_acc)
-
-            save_chkpt(model, optimizer, TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC, chkpt_fp)
-
-            # if (epoch+1)%2 == 0:
-            print(f'{epoch+1}|{num_epochs} \t train_loss: {train_loss:.4f} \t train_acc: {train_acc:.4f} \t train_f1: {train_f1:.4f}\
-                    val_loss: {val_loss:.4f} \t val_acc: {val_acc:.4f} \t val_f1: {val_f1:.4f} \t time_taken: {(time.time()-start_time)/60:.4f} mins')
-            start_time = time.time()
-
-        all_f1_scores.append(val_f1)
-
-    print(f"\nAverage F1 Score: {np.mean(all_f1_scores):.4f}")
+def count_parameters(model):
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params, trainable_params
     
 def main(model_conf, setting):
 
@@ -196,10 +211,13 @@ def main(model_conf, setting):
     model = VST(num_classes).to(device) if model_conf == 'VST' else VSTWithCLIP(num_classes).to(device)
     criterion = VSTLoss(weight=weights) if model_conf == 'VST' else VSTWithClipLoss(weight=weights)
 
-    cross_validate(model, criterion, video_files, labels, desc, clip_len, min_clip_len=5, batch_size=batch_size,
-                   num_epochs=num_epochs, device=device)
+    total_params, trainable_params = count_parameters(model)
+    print(f'total_params: {total_params} \t trainable_params: {trainable_params}')
+
+    k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len=5, batch_size=batch_size,
+                   num_epochs=num_epochs, num_classes=num_classes, device=device)
 
 
 if __name__ == "__main__":
-    
+    print(f"--------- Training Configuration: {model_conf} \t\t {setting} classification ---------")
     main(model_conf, setting)

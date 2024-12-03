@@ -8,9 +8,9 @@ csv_fp: ASBD.csv
 clip_len: 30
 batch_size: 16
 lr: 0.001
-num_epochs: 10
-# model: VST
-model: VSTWithCLIP
+num_epochs: 30
+model: VST
+# model: VSTWithCLIP
 setting: binary
 # setting: multiclass
 categories: [

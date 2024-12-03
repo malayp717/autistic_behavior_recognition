@@ -2,7 +2,6 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
-from sklearn.model_selection import train_test_split
 
 transform = transforms.Compose([
                     transforms.ToPILImage(),

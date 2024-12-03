@@ -26,7 +26,7 @@ def get_video_files_and_labels(data_dir, categories, setting):
         else:
             cat_dir = sorted(glob.glob(f'{data_dir}/abnormal/{category}/clip/*/*.avi'))
 
-        desc.extend([category]*len(cat_dir))
+        desc.extend([category] * len(cat_dir))
         video_files.extend(cat_dir)
 
         if setting == 'binary':
@@ -35,6 +35,9 @@ def get_video_files_and_labels(data_dir, categories, setting):
             labels.extend([cat_to_idx[category]] * len(cat_dir))
 
     weights = get_label_weights(labels)
+    perm = np.random.permutation(len(video_files))
+    video_files, labels, desc = [video_files[i] for i in perm], [labels[i] for i in perm], [desc[i] for i in perm]
+    
     return video_files, labels, desc, weights
 
 def save_chkpt(model, optimizer, train_loss, train_acc, val_loss, val_acc, fp):

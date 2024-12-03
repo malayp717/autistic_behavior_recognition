@@ -113,26 +113,5 @@ def main():
             preprocess_video(yolo_model, video_name, f'{video_path}/{video_fp}', out_clip, out_frames, clip_len)
             print(f'Time taken for {video_name}: {(time.time() - start_time)/60:.2f} mins')
 
-def get_video_duration(video_path):
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-
-    assert frame_count == 30, f'{video_path}, is incorrect'
-    duration = frame_count / fps
-    print(video_path, fps, duration, frame_count)
-
 if __name__ == '__main__':
-
     main()
-    # for category in categories:
-    #     out_dir = os.path.join(preproc_data_dir, 'abnormal', category) if category != 'normal' else os.path.join(preproc_data_dir, 'normal')
-
-    #     out_clip = os.path.join(out_dir, 'clip')
-    #     os.makedirs(out_clip, exist_ok=True)
-
-    #     # video_files = os.listdir(f'{out_clip}/clip/')
-    #     video_files = glob.glob(f'{out_clip}/*/*.avi')
-    #     for file in video_files:
-    #         get_video_duration(file)

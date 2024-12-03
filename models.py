@@ -24,6 +24,18 @@ class VST(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = False
 
+        for param in self.backbone.features[6].parameters():
+            param.requires_grad = True
+            
+        for param in self.backbone.norm.parameters():
+            param.requires_grad = True
+
+        for param in self.backbone.avgpool.parameters():
+            param.requires_grad = True
+
+        for param in self.backbone.head.parameters():
+            param.requires_grad = True    
+        
         self.backbone.head = nn.Linear(self.backbone.head.in_features, num_classes)
 
     def forward(self, x):
@@ -47,7 +59,7 @@ class VSTWithCLIP(nn.Module):
         self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
         for param in self.text_model.parameters():
             param.requires_grad = False
-
+        
         self.classifier = nn.Linear(self.hid_dim*2, num_classes)
         self.description_mode = description_mode
 
@@ -59,7 +71,7 @@ class VSTWithCLIP(nn.Module):
         video_features = self.video_embed(video_features)
 
         text_tokens = self.tokenizer(texts, return_tensors="pt", padding="max_length", truncation=True, max_length=50).to(video.device)
-        text_features = self.text_model(**text_tokens).last_hidden_state[:, 0, :]  # CLS token
+        text_features = self.text_model(**text_tokens).last_hidden_state[:, 0, :]
 
         combined_features = torch.cat((video_features, text_features), dim=1)
         logits = self.classifier(combined_features)
