@@ -46,7 +46,7 @@ class VST(nn.Module):
         return logits
     
 class VSTWithCLIP(nn.Module):
-    def __init__(self, num_classes, description_mode='word'):
+    def __init__(self, num_classes, description_mode):
         super(VSTWithCLIP, self).__init__()
         self.hid_dim = 512
 

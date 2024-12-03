@@ -210,7 +210,7 @@ def main(model_conf, setting, desc_req):
 
     weights = weights.to(device)
     description_mode = 'word' if desc_req == False else 'descriptive'
-    model = VST(num_classes).to(device) if model_conf == 'VST' else VSTWithCLIP(num_classes).to(device)
+    model = VST(num_classes).to(device) if model_conf == 'VST' else VSTWithCLIP(num_classes, description_mode=description_mode).to(device)
     criterion = VSTLoss(weight=weights) if model_conf == 'VST' else VSTWithClipLoss(weight=weights)
 
     total_params, trainable_params = count_parameters(model)
