@@ -61,7 +61,7 @@ class VSTWithCLIP(nn.Module):
             param.requires_grad = False
         
         self.classifier = nn.Linear(self.hid_dim*2, num_classes)
-        self.description_mode = description_mode
+        self.max_len = 50 if description_mode == 'word' else 500
 
     def forward(self, video, texts):
         batch_size, num_frames, C, H, W, = video.size()
@@ -70,7 +70,7 @@ class VSTWithCLIP(nn.Module):
         video_features = self.video_model(video)
         video_features = self.video_embed(video_features)
 
-        text_tokens = self.tokenizer(texts, return_tensors="pt", padding="max_length", truncation=True, max_length=50).to(video.device)
+        text_tokens = self.tokenizer(texts, return_tensors="pt", padding="max_length", truncation=True, max_length=self.max_len).to(video.device)
         text_features = self.text_model(**text_tokens).last_hidden_state[:, 0, :]
 
         combined_features = torch.cat((video_features, text_features), dim=1)

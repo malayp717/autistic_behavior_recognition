@@ -2,10 +2,7 @@ import numpy as np
 import glob
 from sklearn.utils.class_weight import compute_class_weight
 import torch
-
-category_desc = {
-    
-}
+from category_description import category_desc
 
 def get_label_weights(labels):
 
@@ -15,7 +12,7 @@ def get_label_weights(labels):
 
     return weights
 
-def get_video_files_and_labels(data_dir, categories, setting):
+def get_video_files_and_labels(data_dir, categories, setting, desc_req):
 
     video_files, labels, desc = [], [], []
     cat_to_idx = {cat: i for i, cat in enumerate(categories)}
@@ -26,7 +23,11 @@ def get_video_files_and_labels(data_dir, categories, setting):
         else:
             cat_dir = sorted(glob.glob(f'{data_dir}/abnormal/{category}/clip/*/*.avi'))
 
-        desc.extend([category] * len(cat_dir))
+        if not desc_req:
+            desc.extend([category] * len(cat_dir))
+        else:
+            desc.extend([category_desc[category]]  * len(cat_dir))
+
         video_files.extend(cat_dir)
 
         if setting == 'binary':

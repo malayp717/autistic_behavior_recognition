@@ -37,6 +37,7 @@ lr = config['lr']
 num_epochs = config['num_epochs']
 model_conf = config['model']
 setting = config['setting']
+desc_req = config['desc_req']
 # ------------- Config parameters end ------------- #
 
 os.environ['TORCH_HOME'] = model_dir
@@ -142,7 +143,7 @@ def validate(model, loader, criterion, model_conf, num_classes):
     return f1, val_loss, val_acc, val_losses, auc_roc
 
 
-def k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len, batch_size, num_epochs, num_classes, device):
+def k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len, batch_size, num_epochs, num_classes, desc_req, device):
 
     videoDataset = VideoDataset(video_files, labels, desc, clip_len, min_clip_len, transform)
     train_size = int(0.8 * len(videoDataset))
@@ -165,7 +166,7 @@ def k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len, 
 
     # Load the model from previous checkpoint
     TRAIN_LOSS, TRAIN_ACC, VAL_LOSS, VAL_ACC = [], [], [], []
-    chkpt_fp = f'{model_dir}/{model_conf}_{setting}.pth.tar'
+    chkpt_fp = f'{model_dir}/{model_conf}_{setting}.pth.tar' if desc_req == False else f'{model_dir}/{model_conf}_exp_{setting}.pth.tar'
 
     if os.path.exists(chkpt_fp):
         chkpt = load_chkpt(chkpt_fp)
@@ -199,15 +200,16 @@ def count_parameters(model):
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return total_params, trainable_params
     
-def main(model_conf, setting):
+def main(model_conf, setting, desc_req):
 
     num_classes = 2 if setting == 'binary' else len(categories)
     
-    video_files, labels, desc, weights = get_video_files_and_labels(preproc_data_dir, categories, setting)
+    video_files, labels, desc, weights = get_video_files_and_labels(preproc_data_dir, categories, setting, desc_req)
     if model_conf == 'VST':
         desc = None 
 
     weights = weights.to(device)
+    description_mode = 'word' if desc_req == False else 'descriptive'
     model = VST(num_classes).to(device) if model_conf == 'VST' else VSTWithCLIP(num_classes).to(device)
     criterion = VSTLoss(weight=weights) if model_conf == 'VST' else VSTWithClipLoss(weight=weights)
 
@@ -215,9 +217,9 @@ def main(model_conf, setting):
     print(f'total_params: {total_params} \t trainable_params: {trainable_params}')
 
     k_fold(model, criterion, video_files, labels, desc, clip_len, min_clip_len=5, batch_size=batch_size,
-                   num_epochs=num_epochs, num_classes=num_classes, device=device)
+                   num_epochs=num_epochs, num_classes=num_classes, desc_req=desc_req, device=device)
 
 
 if __name__ == "__main__":
-    print(f"--------- Training Configuration: {model_conf} \t\t {setting} classification ---------")
-    main(model_conf, setting)
+    print(f"--------- Training Configuration \t\t Model: {model_conf} \t\t Setting: {setting} \t\t desc_req: {desc_req} classification ---------")
+    main(model_conf, setting, desc_req)

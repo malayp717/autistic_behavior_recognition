@@ -9,10 +9,11 @@ clip_len: 30
 batch_size: 16
 lr: 0.001
 num_epochs: 30
-model: VST
-# model: VSTWithCLIP
+# model: VST
+model: VSTWithCLIP
 setting: binary
 # setting: multiclass
+desc_req: True
 categories: [
     normal,
     walkingaway,
