@@ -90,7 +90,10 @@ def train(model, optimizer, scheduler, loader, criterion, device, model_conf, nu
     train_f1 = f1_score(train_true, train_preds, average='weighted')
     train_loss /= train_total
     train_acc = train_correct / train_total
-    auc_roc = roc_auc_score(label_binarize(train_true, classes=[i for i in range(num_classes)]), train_preds, average='macro', multi_class='ovr')
+
+    y_true_binarized = label_binarize(train_true, classes=[i for i in range(num_classes)])
+    y_pred_binarized = label_binarize(train_preds, classes=[i for i in range(num_classes)])
+    auc_roc = roc_auc_score(y_true_binarized, y_pred_binarized, average='macro', multi_class='ovr')
 
     preds_count = [train_preds.count(c) for c in range(num_classes)]
     true_count = [train_true.count(c) for c in range(num_classes)]
@@ -134,7 +137,10 @@ def validate(model, loader, criterion, model_conf, num_classes):
 
     val_loss /= val_total
     val_acc = val_correct / val_total
-    auc_roc = roc_auc_score(label_binarize(val_true, classes=[i for i in range(num_classes)]), val_preds, average='macro', multi_class='ovr')
+
+    y_true_binarized = label_binarize(val_true, classes=[i for i in range(num_classes)])
+    y_pred_binarized = label_binarize(val_preds, classes=[i for i in range(num_classes)])
+    auc_roc = roc_auc_score(y_true_binarized, y_pred_binarized, average='macro', multi_class='ovr')
 
     preds_count = [val_preds.count(c) for c in range(num_classes)]
     true_count = [val_true.count(c) for c in range(num_classes)]
