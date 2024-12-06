@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from dataset import VideoDataset
-from transformers import T5ForConditionalGeneration, T5Tokenizer, CLIPTokenizer, CLIPTextModel
+from transformers import T5ForConditionalGeneration, T5Tokenizer, CLIPTokenizer, CLIPTextModel, AutoModelForCausalLM, AutoTokenizer
 from models import VSTWithCLIP
 from utils import load_chkpt, get_video_files_and_labels
 
@@ -25,7 +25,7 @@ yolo_conf = config['yolo_conf']
 categories = config['categories']
 clip_len = config['clip_len']
 # batch_size = config['batch_size']
-batch_size = 1
+batch_size = 8
 lr = config['lr']
 num_epochs = config['num_epochs']
 model_conf = config['model']
@@ -47,10 +47,71 @@ transform = transforms.Compose([
                     transforms.Lambda(lambda x: x / 255.0),
                 ])
 
+def generate_summary_with_t5(video_features, text_embeddings, description, summarizer, summarizer_tokenizer):
+    """
+    Generate a video summary using an open-source LLM with multimodal embeddings
+    
+    Args:
+        video_features (torch.Tensor): Normalized video features from VSTWithCLIP
+        text_embeddings (torch.Tensor): Normalized text embeddings from CLIP
+        description (str): Original video description
+        llm_model (PreTrainedModel): Hugging Face LLM model
+        llm_tokenizer (PreTrainedTokenizer): Corresponding tokenizer
+    
+    Returns:
+        str: Generated video summary
+    """
+    # Concatenate video and text features
+    multimodal_features = torch.cat((video_features, text_embeddings), dim=1)
+    
+    # Create a descriptive prompt leveraging multimodal context
+    embedding_stats = (
+        f"Multimodal embedding statistics: "
+        f"Mean = {torch.mean(multimodal_features).item():.2f}, "
+        f"Std = {torch.std(multimodal_features).item():.2f}"
+    )
+    
+    prompt = (
+        f"Zero-shot video understanding task. {embedding_stats}\n"
+        f"Original Video Description: {description}\n"
+        f"Summarize the video content capturing key actions, interactions, and context. "
+        f"Provide a concise and informative summary focusing on the most significant visual and behavioral aspects. "
+        f"Summary:"
+    )
+    
+    # Tokenize the prompt
+    input_ids = summarizer_tokenizer(
+        prompt, 
+        return_tensors="pt", 
+        max_length=512, 
+        truncation=True, 
+        padding=True
+    ).input_ids.to(device)
+    
+    # Generate summary
+    with torch.no_grad():
+        summary_ids = summarizer.generate(
+            input_ids, 
+            max_length=200,  # Adjust based on your needs
+            num_return_sequences=1,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9
+        )
+    
+    # Decode the generated summary
+    summary = summarizer_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    
+    return summary
+
 def summarize(model, loader, model_conf):
 
     summarizer = T5ForConditionalGeneration.from_pretrained("t5-base").to(device)
     summarizer_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+
+    # llm_model_name = "mistralai/Mistral-7B-Instruct-v0.1"  # You can replace with other models
+    # llm_model = AutoModelForCausalLM.from_pretrained(llm_model_name).to(device)
+    # llm_tokenizer = AutoTokenizer.from_pretrained(llm_model_name)
 
     clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
@@ -74,22 +135,23 @@ def summarize(model, loader, model_conf):
             text_embeddings = F.normalize(text_embeddings, dim=1)
 
         # Combine video and text features into a multimodal embedding
-        # multimodal_features = torch.cat((video_features, text_embeddings), dim=1)  # Shape: (B, visual_feature_dim + text_feature_dim)
+        multimodal_features = torch.cat((video_features, text_embeddings), dim=1)  # Shape: (B, visual_feature_dim + text_feature_dim)
 
-        input_text = ["Summarize the child behavior in the video: " + desc[0]]
+        # input_text = ["Summarize the child behavior in the video: " + desc[0]]
 
-        # Tokenize input prompt
-        input_ids = summarizer_tokenizer(input_text, return_tensors="pt", padding=True, truncation=True).input_ids.to(device)
-
-        # Step 3: Generate a summary using the T5 model (or another large language model)
-        with torch.no_grad():
-            summary_ids = summarizer.generate(input_ids, max_length=150, num_beams=4, early_stopping=True)
-
-        # Decode the generated summary
-        summary = summarizer_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-
-        # Output the summary
-        print("Generated Summary: ", summary)
+        summaries = []
+        for i in range(batch_size):
+            summary = generate_summary_with_t5(
+                video_features[i:i+1], 
+                text_embeddings[i:i+1], 
+                desc[i], 
+                summarizer, 
+                summarizer_tokenizer
+            )
+            summaries.append(summary)
+            print(f"Video {i+1} Summary: {summary}\n")
+            
+        break
 
 def main():
 
